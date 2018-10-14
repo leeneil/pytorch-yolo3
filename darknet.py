@@ -91,12 +91,12 @@ class Darknet(nn.Module):
             self.anchor_step = self.loss.anchor_step
             self.num_classes = self.loss.num_classes
 
-        self.header = torch.IntTensor([0,0,0,0])
+        self.header = torch.IntTensor([0,0,0,0,0])
         self.seen = 0
 
     def forward(self, x):
         ind = -2
-        self.loss = None
+        #self.loss = None
         outputs = dict()
         out_boxes = []
         for block in self.blocks:
@@ -138,7 +138,7 @@ class Darknet(nn.Module):
                     self.loss = self.loss + self.models[ind](x)
                 else:
                     self.loss = self.models[ind](x)
-                outputs[ind] = None
+                outputs[ind] = None#x
             elif block['type'] == 'yolo':
                 if self.training:
                     pass
@@ -150,9 +150,9 @@ class Darknet(nn.Module):
             else:
                 print('unknown type %s' % (block['type']))
         if self.training:
-            return loss
+            return x, outputs#self.loss
         else:
-            return out_boxes
+            return x, outputs#out_boxes
 
     def print_network(self):
         print_cfg(self.blocks)
