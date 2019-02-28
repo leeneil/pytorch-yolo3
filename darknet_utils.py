@@ -4,7 +4,7 @@ import time
 import math
 import torch
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
+#from PIL import Image, ImageDraw, ImageFont
 from torch.autograd import Variable
 
 import itertools
@@ -123,9 +123,8 @@ def get_region_boxes(output, conf_thresh, num_classes, anchors, num_anchors, onl
     t0 = time.time()
     all_boxes = []
     output = output.view(batch*num_anchors, 5+num_classes, h*w).transpose(0,1).contiguous().view(5+num_classes, batch*num_anchors*h*w)
-
-    grid_x = torch.linspace(0, w-1, w).repeat(h,1).repeat(batch*num_anchors, 1, 1).view(batch*num_anchors*h*w).type_as(output) #cuda()
-    grid_y = torch.linspace(0, h-1, h).repeat(w,1).t().repeat(batch*num_anchors, 1, 1).view(batch*num_anchors*h*w).type_as(output) #cuda()
+    grid_x = torch.linspace(0, w-1, w).repeat(h,1).repeat(batch*num_anchors, 1, 1).view(batch*num_anchors*h*w).type_as(output) #.cuda()
+    grid_y = torch.linspace(0, h-1, h).repeat(w,1).t().repeat(batch*num_anchors, 1, 1).view(batch*num_anchors*h*w).type_as(output) #.cuda()
     xs = torch.sigmoid(output[0]) + grid_x
     ys = torch.sigmoid(output[1]) + grid_y
 
@@ -235,6 +234,7 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
         cv2.imwrite(savename, img)
     return img
 
+"""
 def plot_boxes(img, boxes, savename=None, class_names=None):
     colors = torch.FloatTensor([[1,0,1],[0,0,1],[0,1,1],[0,1,0],[1,1,0],[1,0,0]]);
     def get_color(c, x, max_val):
@@ -272,7 +272,7 @@ def plot_boxes(img, boxes, savename=None, class_names=None):
         print("save plot results to %s" % savename)
         img.save(savename)
     return img
-
+"""
 def read_truths(lab_path):
     if not os.path.exists(lab_path):
         return np.array([])
@@ -300,7 +300,7 @@ def load_class_names(namesfile):
         line = line.rstrip()
         class_names.append(line)
     return class_names
-
+"""
 def image2torch(img):
     width = img.width
     height = img.height
@@ -309,7 +309,7 @@ def image2torch(img):
     img = img.view(1, 3, height, width)
     img = img.float().div(255.0)
     return img
-
+"""
 def do_detect(model, img, conf_thresh, nms_thresh, use_cuda=1):
     model.eval()
     t0 = time.time()
@@ -388,7 +388,7 @@ def file_lines(thefilepath):
         count += buffer.count('\n')
     thefile.close( )
     return count
-
+"""
 def get_image_size(fname):
     '''Determine the image type of fhandle and return its size.
     from draco'''
@@ -423,6 +423,6 @@ def get_image_size(fname):
         else:
             return
         return width, height
-
+"""
 def logging(message):
     print('%s %s' % (time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()), message))

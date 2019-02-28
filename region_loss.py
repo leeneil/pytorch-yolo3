@@ -4,7 +4,7 @@ import math
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
-from utils import *
+from darknet_utils import *
 
 maxPeaks = 1024
 debug = False
@@ -39,25 +39,12 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
             gy = target[b][t*5+2]*nH
             gw = target[b][t*5+3]*nW
             gh = target[b][t*5+4]*nH
-            
             cur_gt_boxes = torch.FloatTensor([gx,gy,gw,gh]).repeat(nAnchors,1).t()
             cur_ious = torch.max(cur_ious, bbox_ious(cur_pred_boxes, cur_gt_boxes, x1y1x2y2=False))
         conf_mask[b][cur_ious>sil_thresh] = 0
-    '''
-    if seen < 12800:
-       if anchor_step == 4:
-           tx = torch.FloatTensor(anchors).view(nA, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
-           ty = torch.FloatTensor(anchors).view(num_anchors, anchor_step).index_select(1, torch.LongTensor([2])).view(1,nA,1,1).repeat(nB,1,nH,nW)
-       else:
-           tx.fill_(0.5)
-           ty.fill_(0.5)
-       tw.zero_()
-       th.zero_()
-       coord_mask.fill_(1)
-    '''
-
     nGT = 0
     nCorrect = 0
+ 
     for b in xrange(nB):
         for t in xrange(nD):
             if target[b][t*5+3] == 0:
@@ -101,7 +88,6 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
             if debug:
                 print("label", round(gx,1), round(gy,1), round(gw,3), round(gh,3))
                 print("predict", round(float(pred_box[0]),1), round(float(pred_box[1]),3), round(float(pred_box[2]),3), round(float(pred_box[3]),1))
-
             coord_mask[b][best_n][gj][gi] = 1
             cls_mask[b][best_n][gj][gi] = 1
             conf_mask[b][best_n][gj][gi] = object_scale
@@ -117,8 +103,9 @@ def build_targets(pred_boxes, target, anchors, num_anchors, num_classes, nH, nW,
 			round(tw[b][best_n][gj][gi],3), round(th[b][best_n][gj][gi],3), iou)
             if iou > 0.5:
                 nCorrect = nCorrect + 1
+    
+    return nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls
 
-    return nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf, tcls, gw, gh
 
 class RegionLoss(nn.Module):
     def __init__(self, num_classes=0, anchors=[], num_anchors=1):
@@ -168,7 +155,7 @@ class RegionLoss(nn.Module):
         pred_boxes = convert2cpu(pred_boxes.transpose(0,1).contiguous().view(-1,4))
         t2 = time.time()
 
-        nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf,tcls, gw, gh = build_targets(pred_boxes, target.data, self.anchors, nA, nC, \
+        nGT, nCorrect, coord_mask, conf_mask, cls_mask, tx, ty, tw, th, tconf,tcls = build_targets(pred_boxes, target.data, self.anchors, nA, nC, \
                                                                nH, nW, self.noobject_scale, self.object_scale, self.thresh, self.seen)
         cls_mask = (cls_mask == 1)
         nProposals = int((conf > 0.25).sum().data[0])
@@ -204,10 +191,11 @@ class RegionLoss(nn.Module):
         loss_w = self.coord_scale * nn.MSELoss(size_average=False)(pw.sqrt()*coord_mask, tw.exp().sqrt()*coord_mask)/2.0
         loss_h = self.coord_scale * nn.MSELoss(size_average=False)(ph.sqrt()*coord_mask, th.exp().sqrt()*coord_mask)/2.0
         loss_conf = nn.MSELoss(size_average=False)(conf*conf_mask, tconf*conf_mask)/2.0
-        #print(cls)
-        #print(tcls)
-        loss_cls = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
-        loss = loss_x + loss_y  + loss_conf + loss_cls + loss_w + loss_h
+        if tcls.nelement() > 1:
+            loss_cls = self.class_scale * nn.CrossEntropyLoss(size_average=False)(cls, tcls)
+	else:
+            loss_cls = Variable( torch.zeros( loss_conf.size() ).cuda() )
+        loss = loss_x + loss_y  + loss_conf + loss_w + loss_h + loss_cls
         t4 = time.time()
         if False:
             print('-----------------------------------')
@@ -216,7 +204,10 @@ class RegionLoss(nn.Module):
             print('     build targets : %f' % (t3 - t2))
             print('       create loss : %f' % (t4 - t3))
             print('             total : %f' % (t4 - t0))
-        #print('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data[0], loss_y.data[0], loss_w.data[0], loss_h.data[0], loss_conf.data[0], loss_cls.data[0], loss.data[0]))
-        print('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data[0], loss_y.data[0], loss_w.data[0], loss_h.data[0], loss_conf.data[0], 0, loss.data[0]))
-        recall = float(nCorrect) / float(nGT)
+        print('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data[0], loss_y.data[0], loss_w.data[0], loss_h.data[0], loss_conf.data[0], loss_cls.data[0], loss.data[0]))
+        #print('%d: nGT %d, recall %d, proposals %d, loss: x %f, y %f, w %f, h %f, conf %f, cls %f, total %f' % (self.seen, nGT, nCorrect, nProposals, loss_x.data[0], loss_y.data[0], loss_w.data[0], loss_h.data[0], loss_conf.data[0], 0, loss.data[0]))
+        if nGT == 0:
+            recall = 0
+        else:
+            recall = float(nCorrect) / float(nGT)
         return loss, recall
