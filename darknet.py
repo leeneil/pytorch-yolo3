@@ -93,6 +93,8 @@ class Darknet(nn.Module):
 
         self.header = torch.IntTensor([0,0,0,0,0])
         self.seen = 0
+        self.delta = 0
+
 
     def forward(self, x):
         ind = -2
